@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?><resources>
     <string name="app">隨身帳本</string><string name="home">首頁</string><string name="chart">圖表</string><string name="report">報告</string><string name="profile">我的</string>
     <string name="income">收入</string><string name="expense">支出</string><string name="balance">餘額</string><string name="this_month">本月</string><string name="no_entries">還沒有帳目</string><string name="add_first">點擊＋新增第一筆帳目</string>
-    <string name="search">搜尋用途、備註、分類或帳戶</string><string name="all">全部</string><string name="add_entry">新增帳目</string><string name="sentence">快速記帳</string><string name="manual">手動記帳</string><string name="parse">解析</string><string name="speak">輸入法語音</string><string name="ime_voice_hint">請點擊目前輸入法上的麥克風進行語音輸入。</string>
+    <string name="search">搜尋用途、備註、分類或帳戶</string><string name="all">全部</string><string name="today">今天</string><string name="yesterday">昨天</string><string name="select_month">選擇月份</string><string name="add_entry">新增帳目</string><string name="sentence">快速記帳</string><string name="manual">手動記帳</string><string name="parse">解析</string><string name="speak">輸入法語音</string><string name="ime_voice_hint">請點擊目前輸入法上的麥克風進行語音輸入。</string>
     <string name="sentence_hint">例如：昨天用微信買午飯，花了 32 元</string><string name="confirm">確認並保存</string><string name="type">類型</string><string name="amount">金額</string><string name="currency">貨幣</string><string name="purpose">用途</string><string name="category">分類</string><string name="account">帳戶</string>
     <string name="date_time">日期與時間</string><string name="note">備註</string><string name="cancel">取消</string><string name="save">保存</string><string name="delete">刪除</string><string name="edit">修改</string><string name="required">保存前請填寫金額和用途</string>
     <string name="week">週</string><string name="month">月</string><string name="year">年</string><string name="trend">收支趨勢</string><string name="categories">分類統計</string><string name="analytics">分析</string><string name="accounts">帳戶</string>
@@ -11,7 +11,18 @@
     <string name="small">小</string><string name="standard">標準</string><string name="large">大</string><string name="extra_large">特大</string>
     <string name="top_category">最高分類</string><string name="net">淨餘額</string><string name="no_data">新增帳目後即可查看分析</string><string name="total_assets">總資產</string><string name="close">關閉</string>
     <string name="backup_restore">備份與還原</string><string name="export_backup">匯出完整備份</string><string name="import_backup">匯入備份</string><string name="export_csv">匯出帳目 CSV</string>
-    <string name="backup_note">完整 JSON 備份可在另一台裝置還原帳目、帳戶、分類、預算和設定。CSV 僅供查看，不能還原。</string>
+    <string name="backup_note">加密備份可在另一台裝置還原帳目、帳戶、分類、預算和設定。CSV 未加密，僅供查看，不能還原。</string>
     <string name="import_warning">匯入備份會覆蓋此裝置目前的全部帳目、帳戶、分類、預算和設定。</string><string name="continue_import">覆蓋並匯入</string>
     <string name="privacy_data">隱私與資料</string><string name="local_data_note">帳本只保存在本機，除非你主動匯出備份檔案。</string>
+    <string name="backup_password_title">使用密碼保護備份</string><string name="backup_password_hint">備份密碼</string><string name="backup_password_requirement">至少輸入 12 個字元。</string>
+    <string name="backup_password_remember">此密碼用於加密備份，遺忘後無法找回，請妥善保存。</string><string name="continue_export">繼續匯出</string>
+    <string name="backup_password_confirm">確認備份密碼</string><string name="backup_password_mismatch">兩次輸入的密碼不一致。</string>
+    <string name="account_currency_locked">產生交易後不可更改</string><string name="duplicate_name">名稱不可重複。</string>
+    <string name="decrypt_backup">解鎖備份</string><string name="legacy_backup_hint">請輸入備份密碼。如果是舊版未加密的 Pocket Ledger JSON 備份，可以留空。</string>
+    <string name="csv_warning">CSV 是明文檔案。你分享給的應用程式可以讀取全部帳目、帳戶名稱和備註。</string>
+    <string name="this_week">本週</string><string name="last_week">上週</string><string name="last_month">上月</string><string name="this_year">本年</string><string name="last_year">上年</string>
+    <string name="total_expense">支出總額</string><string name="total_income">收入總額</string><string name="category_details">分類明細</string>
+    <string name="expense_trend">支出趨勢</string><string name="income_trend">收入趨勢</string>
+    <string name="net_worth">淨資產</string><string name="liabilities">負債</string><string name="manage_accounts">管理帳戶</string>
+    <string name="manage_categories">管理分類</string><string name="category_budgets">分類預算</string><string name="excluded_assets">不計入總資產</string>
 </resources>

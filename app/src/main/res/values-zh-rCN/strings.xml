@@ -1,12 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?><resources>
     <string name="app">随身账本</string><string name="home">首页</string><string name="chart">图表</string><string name="report">报告</string><string name="profile">我的</string>
-    <string name="income">收入</string><string name="expense">支出</string><string name="balance">余额</string><string name="no_entries">还没有账目</string><string name="add_first">点击＋新增第一笔账目</string><string name="search">搜索用途、备注、分类或账户</string><string name="all">全部</string>
+    <string name="income">收入</string><string name="expense">支出</string><string name="balance">余额</string><string name="no_entries">还没有账目</string><string name="add_first">点击＋新增第一笔账目</string><string name="search">搜索用途、备注、分类或账户</string><string name="all">全部</string><string name="today">今天</string><string name="yesterday">昨天</string><string name="select_month">选择月份</string>
     <string name="add_entry">新增账目</string><string name="sentence">快速记账</string><string name="manual">手动记账</string><string name="parse">解析</string><string name="speak">输入法语音</string><string name="ime_voice_hint">请点击当前输入法上的麦克风进行语音输入。</string><string name="confirm">确认并保存</string>
     <string name="amount">金额</string><string name="currency">货币</string><string name="purpose">用途</string><string name="category">分类</string><string name="account">账户</string><string name="date_time">日期与时间</string><string name="note">备注</string><string name="cancel">取消</string><string name="save">保存</string><string name="delete">删除</string><string name="edit">修改</string>
     <string name="week">周</string><string name="month">月</string><string name="year">年</string><string name="trend">收支趋势</string><string name="categories">分类统计</string><string name="analytics">分析</string><string name="accounts">账户</string><string name="budget">每月预算</string>
     <string name="settings">设置</string><string name="appearance">外观</string><string name="system">跟随系统</string><string name="light">浅色</string><string name="dark">深色</string><string name="text_size">文字大小</string><string name="language">语言</string><string name="total_assets">总资产</string><string name="close">关闭</string>
     <string name="backup_restore">备份与恢复</string><string name="export_backup">导出完整备份</string><string name="import_backup">导入备份</string><string name="export_csv">导出账目 CSV</string>
-    <string name="backup_note">完整 JSON 备份可以在另一台设备恢复账目、账户、分类、预算和设置。CSV 仅供查看，不能恢复。</string>
+    <string name="backup_note">加密备份可以在另一台设备恢复账目、账户、分类、预算和设置。CSV 未加密，仅供查看，不能恢复。</string>
     <string name="import_warning">导入备份会覆盖此设备目前的全部账目、账户、分类、预算和设置。</string><string name="continue_import">覆盖并导入</string>
     <string name="privacy_data">隐私与数据</string><string name="local_data_note">账本只保存在本机，除非你主动导出备份文件。</string>
+    <string name="backup_password_title">使用密码保护备份</string><string name="backup_password_hint">备份密码</string><string name="backup_password_requirement">至少输入 12 个字符。</string>
+    <string name="backup_password_remember">此密码用于加密备份，遗忘后无法找回，请妥善保存。</string><string name="continue_export">继续导出</string>
+    <string name="backup_password_confirm">确认备份密码</string><string name="backup_password_mismatch">两次输入的密码不一致。</string>
+    <string name="account_currency_locked">产生交易后不可更改</string><string name="duplicate_name">名称不可重复。</string>
+    <string name="decrypt_backup">解锁备份</string><string name="legacy_backup_hint">请输入备份密码。如果是旧版未加密的 Pocket Ledger JSON 备份，可以留空。</string>
+    <string name="csv_warning">CSV 是明文文件。你分享给的应用可以读取全部账目、账户名称和备注。</string>
+    <string name="this_week">本周</string><string name="last_week">上周</string><string name="this_month">本月</string><string name="last_month">上月</string><string name="this_year">本年</string><string name="last_year">上年</string>
+    <string name="total_expense">支出总额</string><string name="total_income">收入总额</string><string name="category_details">分类明细</string>
+    <string name="expense_trend">支出趋势</string><string name="income_trend">收入趋势</string>
+    <string name="net_worth">净资产</string><string name="liabilities">负债</string><string name="manage_accounts">管理账户</string>
+    <string name="manage_categories">管理分类</string><string name="category_budgets">分类预算</string><string name="excluded_assets">不计入总资产</string>
 </resources>

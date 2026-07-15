@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
     <string name="app">Pocket Ledger</string><string name="home">Home</string><string name="chart">Chart</string><string name="report">Report</string><string name="profile">Profile</string>
     <string name="income">Income</string><string name="expense">Expense</string><string name="balance">Balance</string><string name="this_month">This month</string>
-    <string name="no_entries">No entries yet</string><string name="add_first">Tap + to add your first transaction</string><string name="search">Search purpose, note, category, or account</string><string name="all">All</string>
+    <string name="no_entries">No entries yet</string><string name="add_first">Tap + to add your first transaction</string><string name="search">Search purpose, note, category, or account</string><string name="all">All</string><string name="today">Today</string><string name="yesterday">Yesterday</string><string name="select_month">Select month</string>
     <string name="add_entry">Add Transaction</string><string name="sentence">Quick Entry</string><string name="manual">Manual Entry</string><string name="parse">Parse</string><string name="speak">Voice input</string><string name="ime_voice_hint">Use the microphone button on your current keyboard for voice input.</string>
     <string name="sentence_hint">For example: Yesterday I spent 32 yuan on lunch using WeChat</string><string name="confirm">Review and Save</string><string name="type">Type</string>
     <string name="amount">Amount</string><string name="currency">Currency</string><string name="purpose">Purpose</string><string name="category">Category</string><string name="account">Account</string>
@@ -18,7 +18,18 @@
     <string name="top_category">Top category</string><string name="net">Balance</string><string name="no_data">Add transactions to see insights</string><string name="save_success">Transaction saved</string>
     <string name="filters">Filters</string><string name="clear">Clear</string><string name="total_assets">Total assets</string><string name="close">Close</string>
     <string name="backup_restore">Backup and restore</string><string name="export_backup">Export complete backup</string><string name="import_backup">Import backup</string><string name="export_csv">Export transactions as CSV</string>
-    <string name="backup_note">The complete JSON backup restores transactions, accounts, categories, budgets, and settings on another device. CSV is for viewing only and cannot be restored.</string>
+    <string name="backup_note">The encrypted backup restores transactions, accounts, categories, budgets, and settings on another device. CSV is unencrypted, for viewing only, and cannot be restored.</string>
     <string name="import_warning">Importing a backup will replace all current transactions, accounts, categories, budgets, and settings on this device.</string><string name="continue_import">Replace and import</string>
     <string name="privacy_data">Privacy and data</string><string name="local_data_note">Your ledger stays on this device unless you export a backup file yourself.</string>
+    <string name="backup_password_title">Protect backup with a passphrase</string><string name="backup_password_hint">Backup passphrase</string><string name="backup_password_requirement">Use at least 12 characters.</string>
+    <string name="backup_password_remember">This passphrase encrypts the backup and cannot be recovered. Keep it somewhere safe.</string><string name="continue_export">Continue export</string>
+    <string name="backup_password_confirm">Confirm backup passphrase</string><string name="backup_password_mismatch">The two passphrases do not match.</string>
+    <string name="account_currency_locked">Locked after the first transaction</string><string name="duplicate_name">Names must be unique.</string>
+    <string name="decrypt_backup">Unlock backup</string><string name="legacy_backup_hint">Enter the backup passphrase. For an older unencrypted Pocket Ledger JSON backup, leave this blank.</string>
+    <string name="csv_warning">CSV is plain text. Any app you share it with can read every exported transaction, account name, and note.</string>
+    <string name="this_week">This week</string><string name="last_week">Last week</string><string name="last_month">Last month</string><string name="this_year">This year</string><string name="last_year">Last year</string>
+    <string name="total_expense">Total expense</string><string name="total_income">Total income</string><string name="category_details">Category details</string>
+    <string name="expense_trend">Expense trend</string><string name="income_trend">Income trend</string>
+    <string name="net_worth">Net worth</string><string name="liabilities">Liabilities</string><string name="manage_accounts">Manage accounts</string>
+    <string name="manage_categories">Manage categories</string><string name="category_budgets">Category budgets</string><string name="excluded_assets">Excluded from assets</string>
 </resources>

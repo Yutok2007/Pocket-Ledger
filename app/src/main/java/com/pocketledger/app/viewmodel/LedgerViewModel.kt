@@ -7,11 +7,15 @@ import androidx.lifecycle.viewModelScope
 import com.pocketledger.app.data.LedgerRepository
 import com.pocketledger.app.model.*
 import com.pocketledger.app.parser.NaturalLanguageParser
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.time.*
 import kotlinx.coroutines.launch
 
@@ -25,21 +29,60 @@ data class LedgerUiState(
 )
 
 class LedgerViewModel(application: Application) : AndroidViewModel(application) {
+    companion object {
+        private const val MAX_BACKUP_BYTES = 10 * 1024 * 1024
+    }
+
+    private data class PersistRequest(val generation: Long, val data: StoredState)
+
     private val repository = LedgerRepository(application)
+    private val storageMutex = Mutex()
+    private val saveRequests = Channel<PersistRequest>(Channel.CONFLATED)
+    private var storageGeneration = 0L
     private val _uiState = MutableStateFlow(LedgerUiState(repository.load()))
     val uiState: StateFlow<LedgerUiState> = _uiState.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            for (request in saveRequests) {
+                runCatching {
+                    storageMutex.withLock {
+                        if (request.generation == storageGeneration) repository.save(request.data)
+                    }
+                }.onFailure {
+                    _uiState.value = _uiState.value.copy(userMessage = "Unable to save changes. Please try again.")
+                }
+            }
+        }
+    }
+
     fun parse(text: String): NaturalLanguageParser.ParseResult = NaturalLanguageParser.parse(
-        text, _uiState.value.data.settings.currency, activeAccounts(), activeCategories()
+        text.take(LedgerConstraints.MAX_SENTENCE_LENGTH), _uiState.value.data.settings.currency, activeAccounts(), activeCategories()
     )
 
-    fun saveEntry(candidate: LedgerEntry) {
-        if (candidate.amount <= 0 || candidate.purpose.isBlank()) return
+    fun saveEntry(candidate: LedgerEntry): Boolean {
+        val normalized = candidate.copy(purpose = candidate.purpose.trim())
+        if (
+            !LedgerConstraints.isValidTransactionAmount(normalized.amount) ||
+            normalized.purpose.isBlank() || normalized.purpose.length > LedgerConstraints.MAX_PURPOSE_LENGTH ||
+            normalized.note.length > LedgerConstraints.MAX_NOTE_LENGTH ||
+            normalized.rawText.length > LedgerConstraints.MAX_SENTENCE_LENGTH ||
+            normalized.currency !in currencies
+        ) return reject("This transaction contains an invalid or oversized field.")
         val data = _uiState.value.data
-        val old = data.entries.firstOrNull { it.id == candidate.id }
-        val saved = candidate.copy(updatedAt = Instant.now().toEpochMilli())
+        val selectedAccount = normalized.accountId?.let { id -> data.accounts.firstOrNull { it.id == id } }
+        if (normalized.accountId != null && (selectedAccount == null || selectedAccount.currency != normalized.currency)) {
+            return reject("The selected account does not match the transaction currency.")
+        }
+        val selectedCategory = normalized.categoryId?.let { id -> data.categories.firstOrNull { it.id == id } }
+        if (normalized.categoryId != null && (selectedCategory == null || selectedCategory.type != normalized.type)) {
+            return reject("The selected category does not match the transaction type.")
+        }
+        val old = data.entries.firstOrNull { it.id == normalized.id }
+        val saved = normalized.copy(updatedAt = Instant.now().toEpochMilli())
         val entries = if (old == null) data.entries + saved else data.entries.map { if (it.id == saved.id) saved else it }
         persist(data.copy(entries = entries.sortedByDescending { it.occurredAt }, accounts = recalculateBalances(data.accounts, entries)))
+        return true
     }
 
     fun deleteEntry(entry: LedgerEntry) {
@@ -52,29 +95,40 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
         return LedgerRules.recalculateBalances(accounts, entries)
     }
 
-    fun addAccount(account: LedgerAccount) {
+    fun addAccount(account: LedgerAccount): Boolean {
         val data = _uiState.value.data
-        val existing = data.accounts.firstOrNull { it.id == account.id }
+        val normalized = account.copy(name = account.name.trim())
+        if (
+            normalized.name.isBlank() || normalized.name.length > LedgerConstraints.MAX_NAME_LENGTH ||
+            normalized.type !in accountTypes || normalized.currency !in currencies ||
+            !LedgerConstraints.isValidBalance(normalized.initialBalance) || !LedgerConstraints.isValidBalance(normalized.balance)
+        ) return reject("This account contains an invalid or oversized field.")
+        if (LedgerRules.hasDuplicateAccountName(normalized, data.accounts)) return reject("Account names must be unique.")
+        val existing = data.accounts.firstOrNull { it.id == normalized.id }
+        if (existing != null && existing.currency != normalized.currency && !LedgerRules.canChangeAccountCurrency(existing.id, data.entries)) {
+            return reject("An account with transactions cannot change currency.")
+        }
         val now = Instant.now().toEpochMilli()
-        val transactionImpactMinor = data.entries.filter { it.accountId == account.id && it.currency == account.currency }.sumOf {
+        val transactionImpactMinor = data.entries.filter { it.accountId == normalized.id && it.currency == normalized.currency }.sumOf {
             val value = Money.toMinor(it.amount, it.currency)
             if (it.type == EntryType.INCOME) value else -value
         }
         val saved = if (existing == null) {
-            account.copy(initialBalance = account.balance, createdAt = now, updatedAt = now)
+            normalized.copy(initialBalance = normalized.balance, createdAt = now, updatedAt = now)
         } else {
-            val balanceChanged = Money.toMinor(account.balance, account.currency) != Money.toMinor(existing.balance, existing.currency)
-            val initial = if (balanceChanged) Money.fromMinor(Money.toMinor(account.balance, account.currency) - transactionImpactMinor, account.currency) else account.initialBalance
-            account.copy(initialBalance = initial, updatedAt = now)
+            val balanceChanged = Money.toMinor(normalized.balance, normalized.currency) != Money.toMinor(existing.balance, existing.currency)
+            val initial = if (balanceChanged) Money.fromMinor(Money.toMinor(normalized.balance, normalized.currency) - transactionImpactMinor, normalized.currency) else normalized.initialBalance
+            normalized.copy(initialBalance = initial, updatedAt = now)
         }
         val entries = if (existing != null && existing.name != saved.name) data.entries.map {
             if (it.accountId == saved.id) it.copy(accountName = saved.name, updatedAt = now) else it
         } else data.entries
         val accounts = LedgerRules.upsertAccount(data.accounts, saved)
         persist(data.copy(entries = entries, accounts = recalculateBalances(accounts, entries)))
+        return true
     }
 
-    fun archiveAccount(account: LedgerAccount) = addAccount(account.copy(archived = true))
+    fun archiveAccount(account: LedgerAccount): Boolean = addAccount(account.copy(archived = true))
 
     fun deleteUnusedAccount(account: LedgerAccount): Boolean {
         val data = _uiState.value.data
@@ -99,11 +153,19 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
         persist(data.copy(entries = entries, accounts = recalculateBalances(accounts, entries)))
     }
 
-    fun addCategory(category: LedgerCategory) {
+    fun addCategory(category: LedgerCategory): Boolean {
         val data = _uiState.value.data
-        val existing = data.categories.firstOrNull { it.id == category.id }
+        val normalized = category.copy(name = category.name.trim(), icon = category.icon.take(3))
+        if (normalized.name.isBlank() || normalized.name.length > LedgerConstraints.MAX_NAME_LENGTH) {
+            return reject("This category contains an invalid or oversized name.")
+        }
+        if (LedgerRules.hasDuplicateCategoryName(normalized, data.categories)) return reject("Category names must be unique.")
+        val existing = data.categories.firstOrNull { it.id == normalized.id }
+        if (existing != null && existing.type != normalized.type && !LedgerRules.canChangeCategoryType(existing.id, data.entries)) {
+            return reject("A category with transactions cannot change type.")
+        }
         val now = Instant.now().toEpochMilli()
-        val saved = category.copy(updatedAt = now)
+        val saved = normalized.copy(updatedAt = now)
         val entries = if (existing != null && existing.name != saved.name) data.entries.map {
             if (it.categoryId == saved.id) it.copy(category = saved.name, updatedAt = now) else it
         } else data.entries
@@ -115,6 +177,7 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
             })
         } else data.budget
         persist(data.copy(entries = entries, categories = categories, budget = budget))
+        return true
     }
 
     fun archiveCategory(category: LedgerCategory) = addCategory(category.copy(archived = !category.archived))
@@ -147,16 +210,21 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun setBudget(total: Double) {
+        if (!LedgerConstraints.isValidBudget(total)) {
+            reject("The budget amount is invalid.")
+            return
+        }
         val data = _uiState.value.data
-        persist(data.copy(budget = data.budget.copy(total = total.coerceAtLeast(0.0), currency = data.settings.currency)))
+        persist(data.copy(budget = LedgerRules.withMonthlyBudget(data.budget, data.settings.currency, total)))
     }
 
     fun setCategoryBudget(categoryName: String, amount: Double) {
+        if (categoryName.isBlank() || !LedgerConstraints.isValidBudget(amount)) {
+            reject("The category budget is invalid.")
+            return
+        }
         val data = _uiState.value.data
-        persist(data.copy(budget = data.budget.copy(
-            categoryAmounts = data.budget.categoryAmounts + (categoryName to amount.coerceAtLeast(0.0)),
-            currency = data.settings.currency,
-        )))
+        persist(data.copy(budget = LedgerRules.withCategoryBudget(data.budget, data.settings.currency, categoryName, amount)))
     }
 
     fun updateSettings(transform: (AppSettings) -> AppSettings) {
@@ -164,12 +232,13 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
         persist(data.copy(settings = transform(data.settings)))
     }
 
-    fun exportBackup(uri: Uri) {
+    fun exportBackup(uri: Uri, passphrase: String) {
         val snapshot = _uiState.value.data
         viewModelScope.launch {
             runCatching {
-                val contents = repository.exportBackup(snapshot)
+                val contents = repository.exportBackup(snapshot, passphrase)
                 withContext(Dispatchers.IO) {
+                    require(contents.toByteArray(Charsets.UTF_8).size <= MAX_BACKUP_BYTES) { "The backup is larger than 10 MB." }
                     val resolver = getApplication<Application>().contentResolver
                     resolver.openOutputStream(uri, "wt")?.bufferedWriter(Charsets.UTF_8)?.use { it.write(contents) }
                         ?: error("The selected file could not be opened.")
@@ -182,15 +251,31 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun importBackup(uri: Uri) {
+    fun importBackup(uri: Uri, passphrase: String) {
         viewModelScope.launch {
             runCatching {
                 val contents = withContext(Dispatchers.IO) {
                     val resolver = getApplication<Application>().contentResolver
-                    resolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-                        ?: error("The selected file could not be opened.")
+                    resolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
+                        require(descriptor.length < 0 || descriptor.length <= MAX_BACKUP_BYTES) { "The selected backup is larger than 10 MB." }
+                    }
+                    resolver.openInputStream(uri)?.use { input ->
+                        val output = ByteArrayOutputStream()
+                        val buffer = ByteArray(8 * 1024)
+                        var total = 0
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            total += read
+                            require(total <= MAX_BACKUP_BYTES) { "The selected backup is larger than 10 MB." }
+                            output.write(buffer, 0, read)
+                        }
+                        output.toString(Charsets.UTF_8.name())
+                    } ?: error("The selected file could not be opened.")
                 }
-                repository.importBackup(contents)
+                storageMutex.withLock {
+                    repository.importBackup(contents, passphrase).also { storageGeneration += 1 }
+                }
             }.onSuccess { restored ->
                 _uiState.value = LedgerUiState(
                     data = restored,
@@ -258,10 +343,13 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun persist(data: StoredState) {
         _uiState.value = _uiState.value.copy(data = data)
-        viewModelScope.launch {
-            runCatching { repository.save(data) }.onFailure {
-                _uiState.value = _uiState.value.copy(userMessage = "Unable to save changes. Please try again.")
-            }
+        if (!saveRequests.trySend(PersistRequest(storageGeneration, data)).isSuccess) {
+            _uiState.value = _uiState.value.copy(userMessage = "Unable to queue changes for saving. Please try again.")
         }
+    }
+
+    private fun reject(message: String): Boolean {
+        _uiState.value = _uiState.value.copy(userMessage = message)
+        return false
     }
 }

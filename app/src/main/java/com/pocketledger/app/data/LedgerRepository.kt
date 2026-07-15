@@ -11,11 +11,15 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
+import java.util.Locale
 
 class LedgerRepository(context: Context) {
     companion object {
         private const val BACKUP_FORMAT = "pocket-ledger-backup"
         private const val BACKUP_VERSION = 1
+        private const val MAX_ACCOUNTS = 10_000
+        private const val MAX_CATEGORIES = 10_000
+        private const val MAX_TEXT_LENGTH = 10_000
     }
 
     private val preferences = context.getSharedPreferences("pocket_ledger", Context.MODE_PRIVATE)
@@ -27,38 +31,51 @@ class LedgerRepository(context: Context) {
     suspend fun save(state: StoredState) = writeMutex.withLock {
         withContext(Dispatchers.IO) {
             saveToRoom(state)
-            preferences.edit()
-                .putString("state", encode(state).toString())
-                .putBoolean("room_import_complete", true)
-                .apply()
+            saveSettings(state.settings)
         }
     }
 
     private suspend fun loadAndImportIfNeeded(): StoredState {
         val legacyRaw = preferences.getString("state", null)
         val legacy = legacyRaw?.let { raw -> runCatching { decode(JSONObject(raw)) }.getOrNull() }
+        val storedSettings = preferences.getString("settings", null)
+            ?.let { raw -> runCatching { decodeSettings(JSONObject(raw)) }.getOrNull() }
         val roomHasData = dao.accountCount() > 0 || dao.transactionCount() > 0 || dao.getCategories().isNotEmpty()
         if (!roomHasData) {
             val imported = prepareForRoom(legacy ?: initialState())
             saveToRoom(imported)
-            preferences.edit().putString("state", encode(imported).toString()).putBoolean("room_import_complete", true).apply()
+            saveSettings(imported.settings)
             return imported
         }
-        val roomState = readRoomState(legacy?.settings ?: AppSettings())
-        return if (roomState.categories.isEmpty()) {
+        val roomState = readRoomState(storedSettings ?: legacy?.settings ?: AppSettings())
+        val restored = if (roomState.categories.isEmpty()) {
             roomState.copy(categories = defaultCategories()).also { saveToRoom(it) }
         } else roomState
+        saveSettings(restored.settings)
+        return restored
     }
 
     private fun prepareForRoom(source: StoredState): StoredState {
         val categories = source.categories.ifEmpty { defaultCategories() }
+        val categoryLookup = buildMap {
+            categories.forEach { category ->
+                putIfAbsent(category.type to category.name.lowercase(Locale.ROOT), category)
+            }
+        }
         val resolvedEntries = source.entries.map { entry ->
-            val category = categories.firstOrNull { it.type == entry.type && it.name.equals(entry.category, true) }
+            val category = categoryLookup[entry.type to entry.category.lowercase(Locale.ROOT)]
             entry.copy(categoryId = category?.id, category = category?.name ?: entry.category)
         }
+        val impactByAccount = mutableMapOf<Pair<String, String>, Double>()
+        resolvedEntries.forEach { entry ->
+            entry.accountId?.let { accountId ->
+                val key = accountId to entry.currency
+                val impact = if (entry.type == EntryType.INCOME) entry.amount else -entry.amount
+                impactByAccount[key] = (impactByAccount[key] ?: 0.0) + impact
+            }
+        }
         val accounts = source.accounts.map { account ->
-            val impact = resolvedEntries.filter { it.accountId == account.id && it.currency == account.currency }
-                .sumOf { if (it.type == EntryType.INCOME) it.amount else -it.amount }
+            val impact = impactByAccount[account.id to account.currency] ?: 0.0
             account.copy(
                 type = normalizeAccountType(account.type),
                 initialBalance = if (account.initialBalance != 0.0) account.initialBalance else account.balance - impact,
@@ -71,39 +88,82 @@ class LedgerRepository(context: Context) {
         )
     }
 
-    fun exportBackup(state: StoredState): String = JSONObject().apply {
-        put("format", BACKUP_FORMAT)
-        put("version", BACKUP_VERSION)
-        put("exportedAt", Instant.now().toEpochMilli())
-        put("data", encode(state))
-    }.toString(2)
+    fun exportBackup(state: StoredState, passphrase: String): String {
+        val plaintext = JSONObject().apply {
+            put("format", BACKUP_FORMAT)
+            put("version", BACKUP_VERSION)
+            put("exportedAt", Instant.now().toEpochMilli())
+            put("data", encode(state))
+        }.toString(2)
+        return BackupCrypto.encrypt(plaintext, passphrase)
+    }
 
-    suspend fun importBackup(raw: String): StoredState = writeMutex.withLock {
+    suspend fun importBackup(raw: String, passphrase: String): StoredState = writeMutex.withLock {
         withContext(Dispatchers.IO) {
-            val root = JSONObject(raw)
+            val plaintext = if (BackupCrypto.isEncrypted(raw)) BackupCrypto.decrypt(raw, passphrase) else raw
+            val root = JSONObject(plaintext)
             require(root.optString("format") == BACKUP_FORMAT) { "This is not a Pocket Ledger backup file." }
             val version = root.optInt("version", 0)
             require(version in 1..BACKUP_VERSION) { "This backup version is not supported by this app." }
             val data = root.optJSONObject("data") ?: error("The backup file does not contain ledger data.")
             require(data.has("entries") && data.has("accounts") && data.has("categories")) { "The backup file is incomplete." }
-            val restored = prepareForRoom(decode(data))
+            val decoded = decode(data)
+            validateBackup(decoded)
+            val restored = prepareForRoom(decoded)
             validateBackup(restored)
             saveToRoom(restored)
-            preferences.edit()
-                .putString("state", encode(restored).toString())
-                .putBoolean("room_import_complete", true)
-                .apply()
+            saveSettings(restored.settings)
             restored
         }
     }
 
     private fun validateBackup(state: StoredState) {
+        require(state.entries.size <= LedgerConstraints.MAX_TRANSACTIONS) { "The backup contains too many transactions." }
+        require(state.accounts.size <= MAX_ACCOUNTS) { "The backup contains too many accounts." }
+        require(state.categories.size <= MAX_CATEGORIES) { "The backup contains too many categories." }
         require(state.entries.map { it.id }.distinct().size == state.entries.size) { "The backup contains duplicate transaction IDs." }
         require(state.accounts.map { it.id }.distinct().size == state.accounts.size) { "The backup contains duplicate account IDs." }
         require(state.categories.map { it.id }.distinct().size == state.categories.size) { "The backup contains duplicate category IDs." }
-        require(state.entries.all { it.amount.isFinite() && it.amount >= 0.0 }) { "The backup contains an invalid transaction amount." }
-        require(state.accounts.all { it.balance.isFinite() && it.initialBalance.isFinite() }) { "The backup contains an invalid account balance." }
-        require(state.budget.total.isFinite() && state.budget.categoryAmounts.values.all(Double::isFinite)) { "The backup contains an invalid budget." }
+        require(state.entries.all { it.amount == 0.0 || LedgerConstraints.isValidTransactionAmount(it.amount) }) { "The backup contains an invalid transaction amount." }
+        require(state.accounts.all {
+            LedgerConstraints.isValidBalance(it.balance) && LedgerConstraints.isValidBalance(it.initialBalance)
+        }) { "The backup contains an invalid account balance." }
+        require(
+            state.budget.categoryAmounts.size <= MAX_CATEGORIES &&
+                LedgerConstraints.isValidBudget(state.budget.total) &&
+                state.budget.categoryAmounts.all { (name, amount) ->
+                    name.length <= MAX_TEXT_LENGTH && LedgerConstraints.isValidBudget(amount)
+                }
+        ) { "The backup contains an invalid budget." }
+        require(state.entries.all { entry ->
+            listOf(
+                entry.id, entry.userId, entry.currency, entry.purpose, entry.categoryId.orEmpty(),
+                entry.category, entry.accountId.orEmpty(), entry.accountName, entry.note, entry.rawText,
+            )
+                .all { it.length <= MAX_TEXT_LENGTH }
+        }) { "The backup contains an oversized transaction field." }
+        require(state.accounts.all { account ->
+            listOf(account.id, account.userId, account.name, account.type, account.currency).all { it.length <= MAX_TEXT_LENGTH }
+        }) { "The backup contains an oversized account field." }
+        require(state.categories.all { category ->
+            listOf(category.id, category.userId, category.name, category.icon).all { it.length <= MAX_TEXT_LENGTH }
+        }) { "The backup contains an oversized category field." }
+        require(state.entries.all { it.currency in currencies } && state.accounts.all { it.currency in currencies } && state.budget.currency in currencies) {
+            "The backup contains an unsupported currency."
+        }
+        require(
+            listOf(state.settings.currency, state.settings.language).all { it.length <= MAX_TEXT_LENGTH } &&
+                state.settings.currency in currencies
+        ) { "The backup contains invalid app settings." }
+    }
+
+    private fun saveSettings(settings: AppSettings) {
+        val committed = preferences.edit()
+            .putString("settings", encodeSettings(settings).toString())
+            .remove("state")
+            .remove("room_import_complete")
+            .commit()
+        check(committed) { "Unable to save app settings." }
     }
 
     private fun initialState(): StoredState {
@@ -203,6 +263,20 @@ class LedgerRepository(context: Context) {
         })
     }
 
+    private fun encodeSettings(settings: AppSettings) = JSONObject().apply {
+        put("theme", settings.theme.name)
+        put("textSize", settings.textSize.name)
+        put("currency", settings.currency)
+        put("language", settings.language)
+    }
+
+    private fun decodeSettings(settings: JSONObject) = AppSettings(
+        enumValueOrDefault(settings.optString("theme"), ThemeMode.SYSTEM),
+        enumValueOrDefault(settings.optString("textSize"), TextSize.STANDARD),
+        settings.optString("currency", "CNY"),
+        settings.optString("language", "zh-TW"),
+    )
+
     private fun decode(json: JSONObject): StoredState {
         val entries = json.optJSONArray("entries") ?: JSONArray()
         val accounts = json.optJSONArray("accounts") ?: JSONArray()
@@ -215,7 +289,7 @@ class LedgerRepository(context: Context) {
             accounts = (0 until accounts.length()).map { jsonToAccount(accounts.getJSONObject(it)) },
             categories = (0 until categories.length()).map { jsonToCategory(categories.getJSONObject(it)) },
             budget = Budget(budget.optDouble("total", 5000.0), categoryJson.keys().asSequence().associateWith { categoryJson.optDouble(it) }, budget.optString("currency", "CNY")),
-            settings = AppSettings(enumValueOrDefault(settings.optString("theme"), ThemeMode.SYSTEM), enumValueOrDefault(settings.optString("textSize"), TextSize.STANDARD), settings.optString("currency", "CNY"), settings.optString("language", "zh-TW")),
+            settings = decodeSettings(settings),
         )
     }
 

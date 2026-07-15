@@ -68,10 +68,12 @@ class LedgerRepositoryBackupTest {
             settings = AppSettings(theme = ThemeMode.DARK, textSize = TextSize.LARGE, currency = "USD", language = "zh-CN"),
         )
 
-        val backup = repository.exportBackup(original)
-        val restored = repository.importBackup(backup)
+        val passphrase = "correct horse battery staple"
+        val backup = repository.exportBackup(original, passphrase)
+        val restored = repository.importBackup(backup, passphrase)
 
-        assertTrue(backup.contains("\"format\": \"pocket-ledger-backup\""))
+        assertTrue(BackupCrypto.isEncrypted(backup))
+        assertTrue(!backup.contains("\"format\": \"pocket-ledger-backup\""))
         assertEquals(original.entries, restored.entries)
         assertEquals(original.accounts, restored.accounts)
         assertEquals(original.categories, restored.categories)

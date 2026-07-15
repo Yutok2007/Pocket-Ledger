@@ -1,8 +1,20 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
 }
+
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.isFile) {
+        FileInputStream(keystorePropertiesFile).use(::load)
+    }
+}
+val requiredSigningProperties = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+val releaseSigningConfigured = requiredSigningProperties.all { !keystoreProperties.getProperty(it).isNullOrBlank() }
 
 android {
     namespace = "com.pocketledger.app"
@@ -16,6 +28,30 @@ android {
         versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            isDebuggable = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.findByName("release")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+        }
     }
 
     buildFeatures {
@@ -34,6 +70,20 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+}
+
+val validateReleaseSigning by tasks.registering {
+    group = "verification"
+    description = "Refuses release builds that do not use a private signing key."
+    doLast {
+        check(releaseSigningConfigured) {
+            "Release signing is not configured. Copy keystore.properties.example to keystore.properties and use your private release keystore."
+        }
+    }
+}
+
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    dependsOn(validateReleaseSigning)
 }
 
 ksp {

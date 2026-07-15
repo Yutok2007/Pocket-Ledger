@@ -81,4 +81,34 @@ class LedgerRulesTest {
         assertEquals(10.0, LedgerAnalytics.totals(entries, "CNY").second, 0.001)
         assertEquals(20.0, LedgerAnalytics.totals(entries, "USD").second, 0.001)
     }
+
+    @Test fun duplicateNamesAndUsedAccountCurrencyChangesAreRejected() {
+        assertTrue(LedgerRules.hasDuplicateAccountName(account.copy(id = "other", name = " cash "), listOf(account)))
+        assertTrue(LedgerRules.hasDuplicateCategoryName(food.copy(id = "other", name = " food "), listOf(food)))
+        assertFalse(LedgerRules.canChangeAccountCurrency(account.id, listOf(LedgerEntry(accountId = account.id))))
+        assertTrue(LedgerRules.canChangeAccountCurrency(account.id, emptyList()))
+        assertFalse(LedgerRules.canChangeCategoryType(food.id, listOf(LedgerEntry(categoryId = food.id))))
+        assertTrue(LedgerRules.canChangeCategoryType(food.id, emptyList()))
+    }
+
+    @Test fun changingBudgetCurrencyDoesNotReinterpretOldCategoryAmounts() {
+        val cny = Budget(total = 1000.0, categoryAmounts = mapOf("Food" to 300.0), currency = "CNY")
+        val usd = LedgerRules.withMonthlyBudget(cny, "USD", 500.0)
+        assertEquals("USD", usd.currency)
+        assertEquals(500.0, usd.total, 0.001)
+        assertTrue(usd.categoryAmounts.isEmpty())
+
+        val categoryFirst = LedgerRules.withCategoryBudget(cny, "USD", "Food", 50.0)
+        assertEquals(0.0, categoryFirst.total, 0.001)
+        assertEquals(mapOf("Food" to 50.0), categoryFirst.categoryAmounts)
+    }
+
+    @Test fun builtInCategoriesHaveDistinctStableChartColors() {
+        val colors = defaultCategories(0).associate { it.name to it.color }
+
+        assertEquals(0xFFE99542, colors.getValue("Food"))
+        assertEquals(0xFF8D7456, colors.getValue("Housing"))
+        assertEquals(0xFF16865B, colors.getValue("Salary"))
+        assertTrue(colors.values.distinct().size > 10)
+    }
 }

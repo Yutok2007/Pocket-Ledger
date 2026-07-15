@@ -4,10 +4,12 @@ import java.time.Instant
 import java.util.UUID
 import java.math.BigDecimal
 import java.math.RoundingMode
+import kotlin.math.abs
 
 enum class EntryType { INCOME, EXPENSE }
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 enum class TextSize(val scale: Float) { SMALL(0.88f), STANDARD(1f), LARGE(1.14f), EXTRA_LARGE(1.28f) }
+const val DEFAULT_CATEGORY_COLOR = 0xFF718078
 
 data class LedgerEntry(
     val id: String = UUID.randomUUID().toString(),
@@ -47,7 +49,7 @@ data class LedgerCategory(
     val name: String = "",
     val type: EntryType = EntryType.EXPENSE,
     val icon: String = "·",
-    val color: Long = 0xFF718078,
+    val color: Long = DEFAULT_CATEGORY_COLOR,
     val archived: Boolean = false,
     val createdAt: Long = Instant.now().toEpochMilli(),
     val updatedAt: Long = Instant.now().toEpochMilli(),
@@ -79,6 +81,25 @@ val incomeCategories = listOf("Salary", "Scholarship", "Refund", "Transfer In", 
 val currencies = listOf("CNY", "HKD", "USD", "EUR", "GBP", "JPY", "KRW", "SGD", "AUD", "CAD")
 val accountTypes = listOf("Cash", "Bank Account", "Credit Card", "E-wallet", "Transport Card", "Investment Account", "Other")
 
+object LedgerConstraints {
+    const val MAX_TRANSACTIONS = 100_000
+    // Keeps even the maximum supported transaction count within Long minor-unit totals.
+    const val MAX_ABSOLUTE_AMOUNT = 10_000_000_000.0
+    const val MAX_NAME_LENGTH = 100
+    const val MAX_PURPOSE_LENGTH = 200
+    const val MAX_NOTE_LENGTH = 4_000
+    const val MAX_SENTENCE_LENGTH = 4_000
+
+    fun isValidTransactionAmount(amount: Double): Boolean =
+        amount.isFinite() && amount > 0.0 && amount <= MAX_ABSOLUTE_AMOUNT
+
+    fun isValidBalance(amount: Double): Boolean =
+        amount.isFinite() && abs(amount) <= MAX_ABSOLUTE_AMOUNT
+
+    fun isValidBudget(amount: Double): Boolean =
+        amount.isFinite() && amount in 0.0..MAX_ABSOLUTE_AMOUNT
+}
+
 object Money {
     fun fractionDigits(currency: String): Int = if (currency in setOf("JPY", "KRW")) 0 else 2
 
@@ -93,8 +114,28 @@ object Money {
 }
 
 fun defaultCategories(now: Long = Instant.now().toEpochMilli()): List<LedgerCategory> =
-    expenseCategories.map { name -> LedgerCategory(name = name, type = EntryType.EXPENSE, icon = defaultCategoryIcon(name), createdAt = now, updatedAt = now) } +
-        incomeCategories.map { name -> LedgerCategory(name = name, type = EntryType.INCOME, icon = defaultCategoryIcon(name), createdAt = now, updatedAt = now) }
+    expenseCategories.map { name -> LedgerCategory(name = name, type = EntryType.EXPENSE, icon = defaultCategoryIcon(name), color = defaultCategoryColorValue(name), createdAt = now, updatedAt = now) } +
+        incomeCategories.map { name -> LedgerCategory(name = name, type = EntryType.INCOME, icon = defaultCategoryIcon(name), color = defaultCategoryColorValue(name), createdAt = now, updatedAt = now) }
+
+fun defaultCategoryColorValue(name: String): Long = when (name) {
+    "Food" -> 0xFFE99542
+    "Health" -> 0xFFE26A78
+    "Education" -> 0xFF6B7FD7
+    "Transport" -> 0xFF3B9BA5
+    "Shopping" -> 0xFFAC6AC7
+    "Entertainment" -> 0xFFCB5F95
+    "Housing" -> 0xFF8D7456
+    "Travel" -> 0xFF4B8ACA
+    "Communication" -> 0xFF5A8F80
+    "Subscriptions" -> 0xFF806FC1
+    "Salary" -> 0xFF16865B
+    "Scholarship" -> 0xFF2F9E8F
+    "Refund" -> 0xFF5B8C5A
+    "Transfer In" -> 0xFF3B82A0
+    "Investment Income" -> 0xFF8A6D3B
+    "Part-time Job" -> 0xFF6E7D3A
+    else -> DEFAULT_CATEGORY_COLOR
+}
 
 fun defaultCategoryIcon(name: String): String = when (name) {
     "Food" -> "●"; "Health" -> "+"; "Education" -> "A"; "Transport" -> "→"
